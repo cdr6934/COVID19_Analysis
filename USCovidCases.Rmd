@@ -354,3 +354,7 @@ In the early days, it could be said that PCR primer production has to be ramped 
 ## Discussion / Conclusion 
 To conclude this analysis, we find that looking at the rate of cases / 1000 can tell alot of interesting stories about the data that we are looking at. We looked at NY and TN to give us some insight and an avenue to explore possible reasons for these differences. This could provide a rather lengthy project to further analyze the differences in the data and coming up with asystematic analysis to evaluate government decisions made at a local level to better understand their effectiveness.
 
+```{r}
+sessionInfo()
+```
+
