@@ -1,11 +1,13 @@
 ---
 title: "COVID-19 Cases"
-output: html_notebook
+output:
+  pdf_document: default
+  html_notebook: default
 ---
 
 ## Introduction
 
-The following analysis is taking the US / Global Cases of COVID19 and using the data to draw some insights of the data. The data in this analysis comes from the [John Hopkins Github](https://github.com/CSSEGISandData/COVID-19/tree/master/csse_covid_19_data/csse_covid_19_time_series) site which holds daily numbers from across the globe on COVID. Throughout this analysis we are curious on understanding these cases throughout the last couple years to provide context and to help identify patterns within the data that could help provide legislators or health professionals  the opportunity to 
+The following analysis is taking the US / Global Cases of COVID19 and using the data to draw some insights of the data. Throughout this analysis we are curious on understanding these cases throughout the last couple years to provide context and to help identify patterns within the data that could help provide legislators or health professionals the opportunity to make changes. Much of the work was done by following what Dr Wall has done for us. So in addition to the questions Dr Wall asked, how does the cases / 1000 differ between States? We will be focusing on Tennessee and New York as an interesting comparison between the states. 
 
 ```{r include=FALSE}
 library(tidyverse)
@@ -13,6 +15,7 @@ library(lubridate)
 ```
 
 ## Importing data
+First course of action is to import the data necessary for this analysis. The data in this analysis comes from the [John Hopkins Github](https://github.com/CSSEGISandData/COVID-19/tree/master/csse_covid_19_data/csse_covid_19_time_series) site which holds daily numbers from across the globe on COVID. Much of the data include details down to the county in later months of the pandemic. 
 
 ```{r message=FALSE, warning=FALSE}
 link <- "https://github.com/CSSEGISandData/COVID-19/raw/master/csse_covid_19_data/csse_covid_19_time_series/"
@@ -100,6 +103,12 @@ head(global)
 ### How can we measure the rate of death between US  and US States? 
 First we need to create a new variable that will give us a rate in order for us to better understand death rates by the US as a whole and states 
 ```{r}
+US_by_state <- US %>% 
+  group_by(Province_State, Country_Region, date) %>%
+  summarize(cases = sum(cases), deaths = sum(deaths), Population = sum(Population)) %>%
+  mutate(deaths_per_mill = deaths * 1000000 / Population) %>%
+  select(Province_State, Country_Region, date, cases, deaths, deaths_per_mill, Population) %>% 
+  ungroup()
 
 US_totals <- US_by_state %>% 
   group_by(Country_Region, date ) %>% 
@@ -109,18 +118,11 @@ US_totals <- US_by_state %>%
   select(Country_Region, date, cases, deaths, deaths_per_mill, Population) %>% 
   ungroup()
 
-
-US_by_state <- US %>% 
-  group_by(Province_State, Country_Region, date) %>%
-  summarize(cases = sum(cases), deaths = sum(deaths), Population = sum(Population)) %>%
-  mutate(deaths_per_mill = deaths * 1000000 / Population) %>%
-  select(Province_State, Country_Region, date, cases, deaths, deaths_per_mill, Population) %>% 
-  ungroup()
 ```
 
 
 ### Visualizing COVID cases in the US
-
+First we wanted to see how the cumulative cases stack up to the deaths of COVID in the US. This gives us a LOG graph of the data rendering the information to create an almost straight line due to the compressing nature of a log graph. 
 
 ```{r}
 US_totals %>% filter(cases > 0) %>% 
@@ -132,11 +134,11 @@ US_totals %>% filter(cases > 0) %>%
   scale_y_log10() + 
   theme(legend.position = "bottom", 
         axis.text.x = element_text(angle = 90)) + 
-  labs(title = "COVID19 in US", y = NULL)
+  labs(title = "Cummulative COVID-19 Cases and Deaths in US", y = NULL)
 ```
 
-### Visualizing COVID cases in a state
-
+### Visualizing COVID cases on a  particular state
+Now we create another graph of the same analysis as we had on the US data, but this time we will look at the state of Tennessee. Again we see that past 2022, the data is compressed that it gives us a flat line and is would be probably difficult to draw any insight from the data.
 ```{r}
 
 state <- "Tennessee"
@@ -151,10 +153,10 @@ US_by_state %>%
   scale_y_log10() + 
   theme(legend.position = "bottom", 
         axis.text.x = element_text(angle = 90)) +
-  labs(title=str_c("COVID 19 in ", state), y = NULL)
+  labs(title=str_c("Cummulative COVID-19 Cases and Deaths in ", state), y = NULL)
 ```
 
-Above we observed the cumulative cases day to day, as the magnitude grew, as we see in the above graphs it what does it look like when we only observe the new cases day to day.
+Above we observed the cumulative cases day to day, as the magnitude grew, as we see in the above graphs it what does it look like when we only observe the new cases day to day. We need to add a few more details to our dataset in order to further analyze. 
 
 ```{r}
 US_by_state <- US_by_state %>% 
@@ -166,11 +168,13 @@ US_totals <- US_totals %>%
          new_deaths = deaths - lag(deaths))
 ```
 
+
+We have added two columns `new_cases` and `new_deaths` to give us a better understanding of the new cases by day. 
 ```{r}
 tail(US_totals %>% select(new_cases, new_deaths, everything()))
 ```
 
-```{r}
+```{r message=FALSE, warning=FALSE}
 US_totals %>% 
   ggplot(aes(x=date, y=new_cases)) + 
   geom_line(aes(color="new_cases")) + 
@@ -180,12 +184,16 @@ US_totals %>%
   scale_y_log10() + 
   theme(legend.position = "bottom", 
         axis.text.x = element_text(angle=90))+ 
-  labs(title="COVID19 in US", y = NULL)
+  labs(title="COVID-19 Cases and Deaths in US", y = NULL)
 ```
 
+This gives us a little more granularity of the data. We see a huge upswing in new cases occur in Feb 2022 as those were due to the spreading of COVID-19 strain of Delta. We also see that it was the first time where the death trended differently from the cases of COVID. Of course there are many views that could explain this. 
 
-```{r}
-state <- "New York"
+* Mortality rate of COVID-19 variant not as "successful" 
+* Herd immunity according to some news platforms 
+* Inconsistent data collection between states and centers (though this is going to have a margin of error)
+```{r message=FALSE, warning=FALSE}
+state <- "Tennessee"
 US_by_state %>% 
   filter(cases > 0) %>% 
 filter(Province_State == state) %>% 
@@ -197,9 +205,84 @@ filter(Province_State == state) %>%
   scale_y_log10() + 
   theme(legend.position  = "bottom", 
         axis.text.x = element_text(angle = 90)) + 
-  labs(title=str_c("COVID19 in ", state), y = NULL)
+  labs(title=str_c("COVID-19 Cases and Deaths in ", state), y = NULL)
+```
+The following is an interesting trend that keeps oscillating due to the "less strict" policies in TN. However there isn't much to be compared to here. Let's take NY and TN for example as a case and point. 
+
+```{r message=FALSE, warning=FALSE}
+state <- c("Tennessee","New York")
+US_by_state %>% 
+  filter(cases > 0) %>% 
+filter(Province_State %in% state) %>% 
+  ggplot(aes(x = date, y = new_cases)) + 
+  geom_line(aes(color = "new_cases")) + 
+  geom_point(aes(color = "new_cases")) + 
+  geom_line(aes(y = new_deaths, color = "new_deaths")) + 
+  geom_point(aes(y = new_deaths, color = "new_deaths")) + 
+  facet_grid("Province_State~.") +
+  scale_y_log10() + 
+  theme(legend.position  = "bottom", 
+        axis.text.x = element_text(angle = 90)) + 
+  labs(title=str_c("COVID-19 in ", state[2], " and ", state[1]), y = NULL)
 ```
 
+There is definitely some usefulness when observing the data like so... We see that the September 2021 upswing in cases was higher... but really to make the data comparable we need to look at the information from a per 1000 incidence in order to understand what might be going on with the data. 
+
+```{r}
+state <- c("Tennessee","New York")
+US_by_state %>% 
+   filter(cases > 0 & Province_State %in% state) %>% 
+  mutate( cases_per_thou = 1000*new_cases/Population, 
+          deaths_per_thou = 1000*new_deaths/Population) %>% 
+  ggplot(aes(x = date, y = cases_per_thou, color = Province_State)) + 
+  geom_line(aes()) + 
+  theme(legend.position  = "bottom", 
+        axis.text.x = element_text(angle = 90)) + 
+  labs(title=str_c("COVID-19 Cases per 1000 people in ", state[2], " and ", state[1]), y = NULL)
+```
+This is actually a fascinating story to look at, in this graph. We see that New York started out the pandemic with a much high rate than TN due to it being ground 0 for COVID and  a central hub with a much higher  contact factor (essentially the number of people one might have contact with in a day).
+
+But the cycle of the first wave of COVID started subsiding due to the lockdowns within the first 5 months of the year. 
+
+We see a rise start in August (when school begins in TN) and we see that it seems to hover pretty consistently till the holidays and has a spike in Nov / Dec and drops off. Look at the rates at which those drop offs occur... we see TN have a significant spike and drop off, but in NY we see that the drop off is extended. This is most likely due to the masking mandates, homeschool and lockdowns. This provides some insight into how for health care workers the hospital resources would not be overwhelmed but rather find themselves able to manage and provide better care for the sick.  
+
+Up until the school year of 2021, we have an identical spike in TN as we had previously with the same tapering off of cases... but almost no increase until the holidays of 2021 where we see a much larger spike in NY then we had seen in TN. 
+
+There are a number of reasons for that... the delta started started becoming the predominant strain in Nov 2021 and it was known to be more contagious. So we see a much high case load but it wouldn't surprise me in the least that there was some COVID fatigue going on as well and people were more willing to take the risk as it wasn't an unknown disease at this point anymore. 
+
+This analysis is definitely a viewpoint that would need much more verification. 
+
+### What about the rate of deaths between TN and NY? 
+```{r}
+state <- c("Tennessee","New York")
+US_by_state %>% 
+   filter(cases > 0 & Province_State %in% state) %>% 
+  mutate( cases_per_thou = 1000*new_cases/Population, 
+          deaths_per_thou = 1000*new_deaths/Population) %>% 
+  ggplot(aes(x = date, y = deaths_per_thou, color = Province_State)) + 
+  geom_line(aes()) + 
+  theme(legend.position  = "bottom", 
+        axis.text.x = element_text(angle = 90)) + 
+  labs(title=str_c("COVID-19 Deaths per 1000 people in ", state[2], " and ", state[1]), y = NULL)
+```
+Interesting enough, we see the .3 see the rate at the end of 2021 skyrocket making it difficult to simply visulaize the data. This could have been a correction where data hadn't been kept in earlier days due to holiday backlog. So just for the sake of clarity, lets see what it looks like if we were to take the outlier out. 
+
+```{r}
+state <- c("Tennessee","New York")
+US_by_state %>% 
+   filter(cases > 0 & Province_State %in% state) %>% 
+  mutate( cases_per_thou = 1000*new_cases/Population, 
+          deaths_per_thou = 1000*new_deaths/Population) %>%
+  filter(deaths_per_thou < 0.1) %>% 
+  ggplot(aes(x = date, y = deaths_per_thou, color = Province_State)) + 
+  geom_line(aes()) + 
+  theme(legend.position  = "bottom", 
+        axis.text.x = element_text(angle = 90)) + 
+  labs(title=str_c("COVID-19 Deaths per 1000 people in ", state[2], " and ", state[1]), y = NULL)
+```
+Outside of the first spike in NY, we see that TN though alot of spikes, we could smoothen out the data and we'd find that the rate is for the majority of the last 2.5 years are higher in TN then they are in NY. The scale here might seem small.. but even at 0.04 per 1000 is 4 people per 100,000 or 40 people per million can be quite telling as that rate never even came close in NY. 
+
+## How do we compare data between countries or states? 
 ```{r}
 US_state_totals <- US_by_state %>% 
 group_by(Province_State) %>% 
@@ -210,46 +293,64 @@ summarize(deaths = max(deaths), cases=max(cases),
   filter(cases > 0, population > 0)
 ```
 
-```{r}
-US_state_totals %>% slice_min(deaths_per_thou, n = 10)
-```
+After summarizing the data by state, we can start comparing the worst day throughout the entire 2.5 years that COVID has been around. We see that for the 10 lowest states: 
 
 ```{r}
 US_state_totals %>% slice_min(deaths_per_thou,n = 10)%>% select(deaths_per_thou, cases_per_thou, everything())
 ```
+And then the 10 highest states with a bunch of those states being in the in the southern states. This can  be due to again a few different things.
+
+* legislative policies - the north in general was much stricter in masking mandates and lockdown initiatives. 
+* health - there could be a case made that the southern states is more obese than some of the other states
+* Population demographics - Age of the population could also cause this data to be higher in the southern states than in the northern states.
+
+All these reasons could be due to a number of things but without external data and confirmation it would be difficult to know for certain if there is any validity in reasonings given. 
 
 ```{r}
 US_state_totals %>% slice_max(deaths_per_thou,n = 10)%>% select(deaths_per_thou, cases_per_thou, everything())
 ```
 
 ## Modelling the data
+Modelling data never gives us exact information, however it gives us an idea of what possibly might happen. For this part of class, we created a linear model. 
 
 ```{r}
 mod <- lm(deaths_per_thou ~ cases_per_thou, data = US_state_totals)
 summary(mod)
 ```
 
-```{r}
-US_state_totals %>% slice_min(cases_per_thou)
-```
+Here are are simply drawing a linear model $y=mx+b$.. we can see that there is an intercept of -0.273 and a slope of 0.011 which says that for every for every additional 1000 cases, we see the deaths_per_thou increase 0.011 or 11 people based on on the model. But lets see what that might look like in action. 
 
-```{r}
-US_state_totals %>% slice_max(cases_per_thou)
-```
+Do a little data transformation to add the predictions to the dataset. 
 
 ```{r}
 x_grid <- seq(1,151)
 new_df <- tibble(cases_per_thou = x_grid)
 US_state_totals %>% mutate(pred = predict(mod))
-```
-
-```{r}
 US_tot_w_pred <- US_state_totals %>% mutate(pred = predict(mod))
-US_tot_w_pred
 ```
-
+And graph them... 
 ```{r}
 US_tot_w_pred %>% ggplot() +
   geom_point(aes(x = cases_per_thou, y = deaths_per_thou), color = "blue") +
   geom_point(aes(x = cases_per_thou, y = pred), color = "red") 
 ```
+
+This model, when you take into consideration has an r^2 of 0.84 which makes it to be a poor predictor of what is actually going on. With additional information either in rows of data or in additional types of data we probably would be able to make a more accurate model of the data. One can also use a polynomial model that might provide a little more accuracy to the data. 
+
+
+## Discussion on Bias
+There is nothing as wonderful as being able to have so much data in one sheet. The upstream work that goes into providing this data is a rather big undertaking that we really don't comprehend. However there are still many ways bias' can get into the data. 
+
+
+### Data accuracy based on technology 
+There are going to be varying levels of accuracy of the data between countries and states across the world. Technology is a wonderful thing, it helps us coordinate to have this information but there are still many places even in the United States that are hand counting this information and using paper documentation and not EMR systems. 
+
+### Data accuracy based on nefarious reporting  
+There are also rumours that COVID cases might be high due to the payout a hospital receives from an insurance company. It would not surprise me that there will be a hand full of cases across the countless of hospitals and emergency care facilities that serve 330 million people. (just to rant... insurance companies will quickly get onto figure this out... they aren't in the market for losing money). 
+
+### Early symptoms were confusing
+In the early days, it could be said that PCR primer production has to be ramped up for all hospitals to be able to do PCR tests for COVID-19.
+
+## Discussion / Conclusion 
+To conclude this analysis, we find that looking at the rate of cases / 1000 can tell alot of interesting stories about the data that we are looking at. We looked at NY and TN to give us some insight and an avenue to explore possible reasons for these differences. This could provide a rather lengthy project to further analyze the differences in the data and coming up with asystematic analysis to evaluate government decisions made at a local level to better understand their effectiveness.
+
