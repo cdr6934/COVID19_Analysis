@@ -1,0 +1,255 @@
+---
+title: "COVID-19 Cases"
+output: html_notebook
+---
+
+## Introduction
+
+The following analysis is taking the US / Global Cases of COVID19 and using the data to draw some insights of the data. The data in this analysis comes from the [John Hopkins Github](https://github.com/CSSEGISandData/COVID-19/tree/master/csse_covid_19_data/csse_covid_19_time_series) site which holds daily numbers from across the globe on COVID. Throughout this analysis we are curious on understanding these cases throughout the last couple years to provide context and to help identify patterns within the data that could help provide legislators or health professionals  the opportunity to 
+
+```{r include=FALSE}
+library(tidyverse)
+library(lubridate)
+```
+
+## Importing data
+
+```{r message=FALSE, warning=FALSE}
+link <- "https://github.com/CSSEGISandData/COVID-19/raw/master/csse_covid_19_data/csse_covid_19_time_series/"
+
+files <- c("time_series_covid19_confirmed_US.csv", "time_series_covid19_confirmed_global.csv", "time_series_covid19_deaths_US.csv", "time_series_covid19_deaths_global.csv", "time_series_covid19_recovered_global.csv")
+
+US_cases <- read_csv(paste0(link,files[1]))
+global_cases <- read_csv(paste0(link,files[2]))
+US_deaths <-  read_csv(paste0(link,files[3]))
+global_deaths <- read_csv(paste0(link,files[4]))
+# covid_data <- read_csv(link)
+
+uid_lookup_url <- "https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/UID_ISO_FIPS_LookUp_Table.csv"
+uid <- read_csv(uid_lookup_url)
+```
+
+## Data Processing
+Currently there are 5  files that contain all of the information that we need in order to do the proper analysis of the data. Therefore we are going to use a number of techniques to meld the data into a version that we can analyze. 
+
+### Cleaning / Joining Global Cases
+Taking the global cases, we have a number of columns that we are not going to be using in the analysis. 
+
+#### Pro-Tip on large datasets
+One think to remember when working with larger datasets, the data is loaded into memory. Thus when you have 8 GB of memory and 9 gb of data, R is going to crash and will nto be able to perform the analysis. Therefore it is good to get into habit of considering it. 
+
+```{r}
+global_cases  <- global_cases %>% pivot_longer(cols = -c(`Province/State`, `Country/Region`, Lat, Long), names_to = "date", values_to = "cases") %>% select(-c(Lat, Long))
+
+global_deaths  <- global_deaths %>% pivot_longer(cols = -c(`Province/State`, `Country/Region`, Lat, Long), names_to = "date", values_to = "deaths") %>% select(-c(Lat, Long))
+
+global <- global_cases %>% 
+  full_join(global_deaths) %>% 
+  rename(Country_Region = `Country/Region`, Province_State = `Province/State`) %>% 
+  mutate(date = mdy(date))
+
+```
+
+
+### Cleaning / Joining US Cases
+Again we are going to do the same process as above, however just for the US data. 
+```{r}
+US_cases <- US_cases %>% pivot_longer(cols = -(UID:Combined_Key), 
+                          names_to = "date", 
+                          values_to = "cases") %>% 
+  select(Admin2:cases) %>% mutate(date = mdy(date)) %>% 
+  select(-c(Lat, Long_))
+
+US_deaths <- US_deaths %>% 
+  pivot_longer(cols = -(UID:Population), 
+               names_to = "date", 
+               values_to = "deaths") %>% 
+  select(Admin2:deaths) %>% 
+  mutate(date = mdy(date)) %>% 
+  select(-c(Lat, Long_))
+
+US <- US_cases %>% full_join(US_deaths)
+```
+
+
+### Join Global and US Cases 
+Here we are going to take both datasets (US_cases and global) and `unite` two files to create a dataset that we can analyze the data together. 
+```{r}
+global <- global %>% unite("Combined_Key", 
+                           c(Province_State, Country_Region), 
+                           sep = ", ", 
+                           na.rm = TRUE, 
+                           remove = FALSE)
+```
+
+One thing that is missing from the Global dataset is population. Therefore to add population to the global dataset we need to find the data (can see the import above) and then join the two datasets together. 
+
+```{r}
+uid <- uid %>% select(-c(Lat, Long_, Combined_Key, code3, iso2, iso3, Admin2))
+global <- global %>% left_join(uid, by = c("Province_State", "Country_Region")) %>% 
+  select(-c(UID, FIPS)) %>% 
+  select(Province_State, Country_Region, date, cases, deaths, Population, Combined_Key)
+```
+
+Now that all of the information is in one dataset, we can now start asking questions of the data. 
+```{r}
+head(global)
+```
+## Data Analysis 
+
+### How can we measure the rate of death between US  and US States? 
+First we need to create a new variable that will give us a rate in order for us to better understand death rates by the US as a whole and states 
+```{r}
+
+US_totals <- US_by_state %>% 
+  group_by(Country_Region, date ) %>% 
+  summarize(cases = sum(cases), deaths = sum(deaths), 
+            Population = sum(Population)) %>%
+  mutate(deaths_per_mill = deaths * 1000000 / Population) %>% 
+  select(Country_Region, date, cases, deaths, deaths_per_mill, Population) %>% 
+  ungroup()
+
+
+US_by_state <- US %>% 
+  group_by(Province_State, Country_Region, date) %>%
+  summarize(cases = sum(cases), deaths = sum(deaths), Population = sum(Population)) %>%
+  mutate(deaths_per_mill = deaths * 1000000 / Population) %>%
+  select(Province_State, Country_Region, date, cases, deaths, deaths_per_mill, Population) %>% 
+  ungroup()
+```
+
+
+### Visualizing COVID cases in the US
+
+
+```{r}
+US_totals %>% filter(cases > 0) %>% 
+  ggplot(aes(x = date, y = cases)) + 
+  geom_line(aes(color = "cases")) + 
+  geom_point(aes(color = "cases")) + 
+  geom_line(aes(y = deaths, color = "deaths")) + 
+  geom_point(aes(y = deaths, color = "deaths")) + 
+  scale_y_log10() + 
+  theme(legend.position = "bottom", 
+        axis.text.x = element_text(angle = 90)) + 
+  labs(title = "COVID19 in US", y = NULL)
+```
+
+### Visualizing COVID cases in a state
+
+```{r}
+
+state <- "Tennessee"
+US_by_state %>% 
+  filter(Province_State == state) %>%
+  filter(cases > 0 ) %>% 
+  ggplot(aes(x = date, y = cases)) +
+  geom_line(aes(color="cases")) + 
+  geom_point(aes(color="cases")) + 
+  geom_line(aes(y =deaths, color = "deaths")) + 
+  geom_point(aes(y = deaths, color = "deaths")) + 
+  scale_y_log10() + 
+  theme(legend.position = "bottom", 
+        axis.text.x = element_text(angle = 90)) +
+  labs(title=str_c("COVID 19 in ", state), y = NULL)
+```
+
+Above we observed the cumulative cases day to day, as the magnitude grew, as we see in the above graphs it what does it look like when we only observe the new cases day to day.
+
+```{r}
+US_by_state <- US_by_state %>% 
+  mutate(new_cases = cases - lag(cases), 
+         new_deaths = deaths - lag(deaths))
+
+US_totals <- US_totals %>%
+  mutate(new_cases = cases - lag(cases), 
+         new_deaths = deaths - lag(deaths))
+```
+
+```{r}
+tail(US_totals %>% select(new_cases, new_deaths, everything()))
+```
+
+```{r}
+US_totals %>% 
+  ggplot(aes(x=date, y=new_cases)) + 
+  geom_line(aes(color="new_cases")) + 
+  geom_point(aes(color="new_cases")) + 
+  geom_line(aes(y=new_deaths, color="new_deaths")) + 
+  geom_point(aes(y = new_deaths, color = "new_deaths")) + 
+  scale_y_log10() + 
+  theme(legend.position = "bottom", 
+        axis.text.x = element_text(angle=90))+ 
+  labs(title="COVID19 in US", y = NULL)
+```
+
+
+```{r}
+state <- "New York"
+US_by_state %>% 
+  filter(cases > 0) %>% 
+filter(Province_State == state) %>% 
+  ggplot(aes(x = date, y = new_cases)) + 
+  geom_line(aes(color = "new_cases")) + 
+  geom_point(aes(color = "new_cases")) + 
+  geom_line(aes(y = new_deaths, color = "new_deaths")) + 
+  geom_point(aes(y = new_deaths, color = "new_deaths")) + 
+  scale_y_log10() + 
+  theme(legend.position  = "bottom", 
+        axis.text.x = element_text(angle = 90)) + 
+  labs(title=str_c("COVID19 in ", state), y = NULL)
+```
+
+```{r}
+US_state_totals <- US_by_state %>% 
+group_by(Province_State) %>% 
+summarize(deaths = max(deaths), cases=max(cases), 
+          population=max(Population), 
+          cases_per_thou = 1000*cases/population, 
+          deaths_per_thou = 1000*deaths/population) %>% 
+  filter(cases > 0, population > 0)
+```
+
+```{r}
+US_state_totals %>% slice_min(deaths_per_thou, n = 10)
+```
+
+```{r}
+US_state_totals %>% slice_min(deaths_per_thou,n = 10)%>% select(deaths_per_thou, cases_per_thou, everything())
+```
+
+```{r}
+US_state_totals %>% slice_max(deaths_per_thou,n = 10)%>% select(deaths_per_thou, cases_per_thou, everything())
+```
+
+## Modelling the data
+
+```{r}
+mod <- lm(deaths_per_thou ~ cases_per_thou, data = US_state_totals)
+summary(mod)
+```
+
+```{r}
+US_state_totals %>% slice_min(cases_per_thou)
+```
+
+```{r}
+US_state_totals %>% slice_max(cases_per_thou)
+```
+
+```{r}
+x_grid <- seq(1,151)
+new_df <- tibble(cases_per_thou = x_grid)
+US_state_totals %>% mutate(pred = predict(mod))
+```
+
+```{r}
+US_tot_w_pred <- US_state_totals %>% mutate(pred = predict(mod))
+US_tot_w_pred
+```
+
+```{r}
+US_tot_w_pred %>% ggplot() +
+  geom_point(aes(x = cases_per_thou, y = deaths_per_thou), color = "blue") +
+  geom_point(aes(x = cases_per_thou, y = pred), color = "red") 
+```
